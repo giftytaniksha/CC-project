@@ -1,0 +1,7 @@
+import {getChatGPTUser} from '@/app/chatgpt-auth';
+const NAME='nourish_guest';
+export function guestCookieValue(req:Request){const match=(req.headers.get('cookie')||'').split(';').map(x=>x.trim()).find(x=>x.startsWith(NAME+'='));const value=match?.slice(NAME.length+1);return value&&/^[a-f0-9]{64}$/.test(value)?value:null;}
+function cookie(req:Request,value:string,age:number){const host=new URL(req.url).hostname;const local=['localhost','127.0.0.1','terminal.local'].includes(host);return `${NAME}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${age}${local?'':'; Secure'}`;}
+export async function visitor(req:Request,create=false){const user=await getChatGPTUser();if(user)return {userId:user.userId,guest:false,setCookie:null};const existing=guestCookieValue(req);if(existing)return {userId:'guest:'+existing,guest:true,setCookie:null};if(!create)return null;const bytes=crypto.getRandomValues(new Uint8Array(32));const token=Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');return {userId:'guest:'+token,guest:true,setCookie:cookie(req,token,604800)};}
+export function expireGuestCookie(req:Request){return cookie(req,'',0);}
+export function guardOrigin(req:Request){const origin=req.headers.get('origin');if(origin&&origin!==new URL(req.url).origin)throw Error('This request must come from the nutrition website.');if(req.headers.get('sec-fetch-site')==='cross-site')throw Error('Cross-site requests are not allowed.');}
