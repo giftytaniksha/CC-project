@@ -1,25 +1,93 @@
-# Nourish AI configuration
+# Nourish AI configuration (Google Gemini)
 
-The existing assistant sends questions to `POST /api/nutrition` with action `chat` (or `review`). That backend authenticates the current visitor, builds nutrition context from the visitor's saved profile and records, then calls the OpenAI Responses API. The browser never calls OpenAI directly.
+The app calls the Gemini REST API directly from this server (`POST /api/nutrition` with action `chat`, `review`, `recommend`, `planAI` or `estimateFood`). The browser sends the visitor's saved data along with the request; the backend builds nutrition context from it, then calls `generativelanguage.googleapis.com`. The server stores nothing, so there is no database. The browser never calls Gemini directly, and the key never reaches it.
 
-## Required hosted configuration
+This is a plain server-to-API call, not an MCP (Model Context Protocol) connection. MCP connects an *editor or agent* (like Cursor) to external tools; it is not how a deployed web app talks to an LLM provider at runtime. A hosted site has no MCP client running, so there is nothing for an MCP server to connect to here. The REST call below is the correct approach for this app.
 
-| Runtime variable | Required | Configuration |
+Gemini has a free tier. Create a key in Google AI Studio (https://aistudio.google.com/apikey) and use it as shown below.
+
+## What uses Gemini
+
+- **Ask Bloom chat and weekly review** — short JSON replies (one `reply` field, or three review sections) formatted for display on the server.
+- **Daily tip** (`recommend`) — JSON with `breakfast`, `lunch`, `dinner`, and `tip`; the server formats the card (no free-form parsing).
+- **AI planner** (`planAI`) — a day or week of meals aimed at the profile's calorie and protein target, not limited to the built-in food list.
+- **Custom food estimate** (`estimateFood`) — fills in calories/protein/carbs/fat/fiber for a food the visitor types, for them to review before adding it.
+
+All four fail the same way if the key is missing or rejected, and none of them ever send the key to the browser.
+
+## Configuration
+
+| Variable | Required | Notes |
 | --- | --- | --- |
-| `OPENAI_API_KEY` | Yes | Store a valid OpenAI API credential as a **secret** in this Site's runtime environment. |
-| `OPENAI_MODEL` | No | Model available to the configured OpenAI project. The existing default is `gpt-4.1-mini`. |
+| `GEMINI_API_KEY` | Yes | Your Gemini API key. Server-only. |
+| `GEMINI_MODEL` | No | Defaults to **`gemini-3.8-flash`** (Google’s current flash model). See [Choosing a model](#choosing-a-model-speed-vs-quality) below. |
+| `GEMINI_TIMEOUT_MS` | No | Max wait for one Gemini call (default **120000** = 2 min). Raise up to **180000** on slow networks; restart after changing. |
 
-Use the OpenAI Developers plugin's `openai-platform-api-key` workflow for secure key setup, then configure `OPENAI_API_KEY` through Sites runtime environment configuration with `is_secret: true`. Publish the Site after configuring the secret so the deployment uses the updated environment revision.
+### Choosing a model (speed vs quality)
 
-The backend reads `env.OPENAI_API_KEY` and `env.OPENAI_MODEL` from `cloudflare:workers`. Hosted secrets are runtime bindings, not build-time frontend variables. Do not put key values in source files, `.openai/hosting.json`, public assets, a `VITE_*`/`NEXT_PUBLIC_*` variable, or chat messages. Local `.env*` files are ignored by Git; they are not deployed as a substitute for hosted secret configuration.
+Ask Bloom only talks to **Google Gemini** today (same API key). Pick the model with `GEMINI_MODEL` in `.dev.vars` — no code changes.
 
-No schema, guest-session, or food-calculation changes are needed for activation. Missing configuration returns HTTP 503; provider, authentication, rate-limit, and timeout failures return sanitized errors. Failed calls do not save fake assistant replies. The other nutrition tools remain available.
+Google has **retired `gemini-2.0-flash`** for new API calls; use **3.8 flash** or a Studio alias.
 
-## Verification after configuring the secret
+| Model | Good for | Notes |
+| --- | --- | --- |
+| **`gemini-3.8-flash`** (default) | Tips, chat, estimates, planner | Main flash model; app disables extra “thinking” tokens for speed |
+| **`gemini-3.5-flash-lite`** | Same tasks when 3.8 is busy | Google’s current **lite** model; uses OpenAPI-style JSON schema in API calls |
+| **`gemini-flash-latest`** | Studio alias | Often points at the newest flash |
 
-1. Open the existing AI Assistant page and send a nutrition question.
-2. Confirm the browser makes a same-origin `/api/nutrition` request without an OpenAI Authorization header or key.
-3. Confirm loading clears, a reply appears in the selected conversation, and that conversation remains after reload.
-4. Check an unavailable-provider case displays an error and preserves the draft for Retry.
+Example `.dev.vars`:
 
-Automated tests run with `node --test tests/nourish-fixes.test.cjs`. They use an in-memory database and mocked OpenAI responses. They do not prove that a production key has been configured or that a live OpenAI request succeeded.
+```
+GEMINI_API_KEY=your-key-here
+GEMINI_MODEL=gemini-3.8-flash
+```
+
+If responses are still slow, the bottleneck is usually **network latency to Google** (try another Wi‑Fi, turn off VPN) or **free-tier queueing**.
+
+Using **OpenAI, Groq, etc.** would need a different API integration; this project is built for Gemini only.
+
+### Local development
+
+Create `.dev.vars` in the project root (it is gitignored):
+
+```
+GEMINI_API_KEY=your-key-here
+GEMINI_MODEL=gemini-3.8-flash
+# GEMINI_TIMEOUT_MS=180000
+```
+
+Restart the dev server after changing it. The dev server uses `dist/server/wrangler.json`; on start, the root `.dev.vars` is copied there automatically so Wrangler can load your secrets.
+
+Use the API key from [Google AI Studio](https://aistudio.google.com/apikey). Newer keys may start with `AIza` or `AQ.` — paste the exact value from Studio’s “curl” example.
+
+### Hosted (Cloudflare)
+
+Store the key as a secret so it is never in source control:
+
+```
+npx wrangler secret put GEMINI_API_KEY
+```
+
+Optionally set `GEMINI_MODEL` the same way. Redeploy after changing secrets.
+
+## Behavior
+
+- Prompts send a **compact** profile context and require **JSON schema** responses. On fast networks answers arrive in a few seconds; slow routes to Google may need the full **120s** default (or more via `GEMINI_TIMEOUT_MS`).
+- Missing or invalid key: HTTP 503 with `AI_CONFIGURATION_ERROR`.
+- Rate limit (free-tier quota): HTTP 429 with `AI_RATE_LIMITED`.
+- Google **model overload** (503 “high demand”): HTTP 503 with `AI_OVERLOADED` — wait and retry, or try `GEMINI_MODEL=gemini-3.5-flash-lite` in `.dev.vars`.
+- Provider, network, or timeout failures return sanitized errors (502 / 504).
+- Blocked or empty responses return `AI_BLOCKED` / `AI_EMPTY_RESPONSE`.
+- Failed calls do not save fake assistant replies. The other nutrition tools keep working without a key.
+- The Daily tip (`recommend`) is saved in the browser's data for that day, so it does not call Gemini on every page load.
+- Any reply, tip or plan that names something listed under allergies, intolerances or dislikes is rejected with `AI_EXCLUDED_FOOD` and not saved — a server-side check on top of asking the model to avoid it.
+- Visitor data is kept in this browser's `localStorage` only. Ending the session deletes it. The server validates each request and rejects data it cannot read.
+
+## Verification
+
+1. Open the AI Assistant page and send a nutrition question.
+2. Confirm the browser makes a same-origin `/api/nutrition` request with no Gemini key in it.
+3. Confirm a reply appears and stays in the conversation after reload.
+4. Remove the key and confirm a clear error appears and the draft is preserved for retry.
+
+Tests run with `node --test tests/*.test.cjs`. They mock the Gemini responses and use a saved-state fixture (the same shape the browser stores), so they do not prove a live key works.

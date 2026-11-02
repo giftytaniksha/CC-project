@@ -37,13 +37,26 @@ function fixture(guest=true){
   const state={...nutrition.initial(),profile,logs:[{id:'rice-log',foodId:'rice',quantity:1,meal:'Lunch',date},{id:'dal-log',foodId:'dal',quantity:2,meal:'Dinner',date}],water:{[date]:750},weights:[{id:'weight',date,weight:60}],cycle:{enabled:true,start:'2026-10-21',length:28,duration:5}};
   const targets=nutrition.targets(profile),totals=nutrition.sum(state.logs);
   state.plan=[{date,meals:['Breakfast','Lunch','Snack','Dinner'].map((type,i)=>nutrition.meal(profile,type,i,targets))}];
-  return {state,targets,totals,remaining:Object.fromEntries(nutrition.keys.map(k=>[k,Math.max(0,targets[k]-totals[k])])),cycleEstimate:nutrition.cycle(state.cycle,date),weekly:nutrition.stats(state,date),version:0,guest,aiAvailable:false};
+  return {state,targets,totals,remaining:Object.fromEntries(nutrition.keys.map(k=>[k,Math.max(0,targets[k]-totals[k])])),cycleEstimate:nutrition.cycle(state.cycle,date),weekly:nutrition.stats(state,date),suggestions:nutrition.suggestions(profile,targets,1),recommendation:null,version:0,guest,aiAvailable:false};
 }
 function render(page,extra={}){
   const data=fixture(extra.guest??true);
-  overrides={0:data,3:page,4:date,18:data.state.cycle,...extra.states};stateIndex=0;
+  // Hook order in nutrition-app: 0 state, 1 aiAvailable, 2 storageError, 4 page, 5 date, 16 cycle draft.
+  overrides={0:data.state,4:page,5:date,16:data.state.cycle,...extra.states};stateIndex=0;
   return renderToStaticMarkup(React.createElement(StudioTheme,null,React.createElement(App)));
 }
+
+test('home page shows today\u2019s logged meals, not just recommendations',()=>{
+  const html=render('Home');
+  assert(html.includes('Your plate today.'),'today\u2019s plate heading');
+  assert(html.includes('Cooked rice'),'logged meal visible on Home');
+  assert(html.includes('aria-label="Add food to Breakfast"'),'add-to-meal control for an unlogged meal');
+});
+test('the header date control opens the native picker reliably',()=>{
+  const html=render('Home');
+  assert(html.includes('aria-label="Selected date"'),'date input present');
+  assert(!html.includes('aria-label="Day to view or log"'),'no duplicate date control on Home');
+});
 
 test('pre-paint theme script honors system, explicit choice, and reloads before content',()=>{
   const html=renderToStaticMarkup(React.createElement(StudioTheme,null,React.createElement('main',null,'App content')));
@@ -61,43 +74,67 @@ test('every page renders for guest and authenticated presentation using real com
   const pages={Home:'362',Meals:'Cooked rice',Food:'Chicken biryani',Planner:'Your grocery list','AI Assistant':'Setup needed',Progress:'362',Wellness:'Day 3'};
   const errors=[];const original=console.error;console.error=(...args)=>errors.push(args.join(' '));
   try{
-    for(const guest of [true,false])for(const [page,label] of Object.entries(pages)){
-      const html=render(page,{guest});
+    for(const [page,label] of Object.entries(pages)){
+      const html=render(page);
       assert(html.includes(label),page+' expected data');
       assert(html.includes('Use light theme')&&html.includes('Use dark theme'),page+' theme controls');
       assert(html.includes('aria-current="page"'),page+' active navigation');
-      assert.equal(html.includes('End guest session'),guest);
-      assert.equal(html.includes('/signout-with-chatgpt?return_to=%2F'),!guest);
+      assert(html.includes('End session'),page+' session control');
+      assert(!html.includes('/signout-with-chatgpt'),page+' no hosted sign-out link');
       assert(!html.includes('NaN'),page+' invalid display value');
       if(page==='Wellness')assert(!html.includes('Keep it flowing'));
-      if(page==='AI Assistant')assert(html.includes('AI responses will be available'));
+      if(page==='AI Assistant')assert(html.includes('Ask Bloom is almost ready'));
     }
   }finally{console.error=original;}
   assert.deepEqual(errors,[]);
 });
 
-test('all five profile steps retain entered values and themed navigation',()=>{
-  const expected=['Female','General wellness','Vegetarian','Foods you enjoy','Test Person'];
-  for(let step=0;step<5;step++){
-    const html=render('Home',{states:{9:step,10:profile,11:true}});
-    assert(html.includes(expected[step]));
-    assert(html.includes(`Profile step ${step+1} of 5`));
-    assert(html.includes('Use dark theme'));
-    assert(html.includes('Cancel'));
-    if(step>0)assert(html.includes('>Back</button>'));
+test('onboarding starts empty with descriptive placeholders and no sample values',()=>{
+  const {Onboarding}=load('components/nutrition/onboarding.tsx');
+  const html=renderToStaticMarkup(React.createElement(Onboarding,{busy:false,guest:true,onSave:async()=>true}));
+  assert(html.includes('Profile step 1 of 5'));
+  assert(html.includes('Hello, let’s meet.'));
+  assert(html.includes('placeholder="Your age in years"'));
+  assert(html.includes('placeholder="Your height in centimetres"'));
+  assert(html.includes('placeholder="Your weight in kilograms"'));
+  assert(!/value="(19|158|60)"/.test(html), 'no pre-filled numbers');
+  assert(html.includes('Continue'));
+});
+test('each onboarding step shows its own fields, with the review summarising them',()=>{
+  const {ProfileFields,profileToForm}=load('components/nutrition/profile-fields.tsx');
+  const form=profileToForm(profile);
+  const expectations=[
+    [0,['Your name','Age','Sex','Height (cm)','Weight (kg)','Usual activity']],
+    [1,['What is your main goal?','Lose weight gently','Build muscle and strength']],
+    [2,['Diet','Cuisine','Meals per day','Cooking time','Food budget']],
+    [3,['Allergies','Intolerances','Foods you avoid','Foods you enjoy']],
+  ];
+  for(const [step,labels] of expectations){
+    const html=renderToStaticMarkup(React.createElement(ProfileFields,{form,set:()=>{},step}));
+    for(const label of labels)assert(html.includes(label),`step ${step}: ${label}`);
   }
+});
+test('dropdowns are Radix popper selects with placeholders, not inline lists',()=>{
+  const {SelectField}=load('components/nutrition/fields.tsx');
+  const html=renderToStaticMarkup(React.createElement(SelectField,{label:'Diet',hint:'Choose one',placeholder:'Choose your diet',value:'',options:[['Vegan','Vegan: no animal products at all']],onChange:()=>{}}));
+  assert(html.includes('data-slot="select-trigger"'));
+  assert(html.includes('Choose your diet'));
+  assert(html.includes('role="combobox"'));
+  assert(!html.includes('onboarding-choice'));
+  const source=fs.readFileSync(path.join(root,'components/nutrition/fields.tsx'),'utf8');
+  assert(source.includes('position="popper"')&&source.includes('className="select-content-opaque"'));
 });
 
 test('empty pages, initial loading, reconnect and cycle-off states render without fabricated data',()=>{
   const data=fixture();data.state={...nutrition.initial(),profile};data.totals=nutrition.emptyTotals();data.weekly=nutrition.stats(data.state,date);data.cycleEstimate=null;
   for(const page of ['Home','Meals','Planner','Progress','Wellness']){
-    const html=render(page,{states:{0:data,18:data.state.cycle}});
+    const html=render(page,{states:{0:data.state,16:data.state.cycle}});
     assert(!html.includes('NaN'));
     if(page==='Progress')assert(html.includes('Log your first meal'));
     if(page==='Wellness')assert(html.includes('Tracking is off'));
   }
   assert(render('Home',{states:{0:null}}).includes('role="status"'));
-  assert(render('Home',{states:{1:'Test connection failure'}}).includes('role="alert"'));
+  assert(render('Home',{states:{2:'Test connection failure'}}).includes('role="alert"'));
 });
 
 test('energy ring preserves true values and clamps only visual progress',()=>{
@@ -149,7 +186,7 @@ test('input boundaries, focus rings and chart marks stay visible in both themes'
 });
 test('reduced motion disables all nonessential motion; choice and dialog surfaces remain explicit',()=>{
   assert.match(css,/@media\(prefers-reduced-motion:reduce\)\{\*,\*::before,\*::after\{animation:none!important;transition:none!important/);
-  assert.match(css,/\.onboarding-choice \.onboarding-choice-list\{position:static/);
+  assert.match(css,/\.field \[data-slot=select-trigger\]\{/);
   assert.match(css,/-webkit-text-fill-color:var\(--foreground\)/);
   assert.match(css,/\.nourish-dialog\{[^}]*background:var\(--card\)/);
 });
@@ -230,15 +267,16 @@ test('Fig & Nectar assigns exact approved surfaces and keeps card progress reada
 });
 
 test('Ask Bloom keeps the composer and branding without mounting the removed aurora',()=>{
- for(const guest of [true,false])for(const page of ['Home','Meals','Food','Planner','AI Assistant','Progress','Wellness']){
-  const html=render(page,{guest});
+ for(const page of ['Home','Meals','Food','Planner','AI Assistant','Progress','Wellness']){
+  const html=render(page);
   assert(!html.includes('aurora-environment'));
   assert(html.includes('Ask Bloom'));
   if(page==='AI Assistant')assert(html.includes('Message Ask Bloom'));
   assert(html.includes('The Daily Bloom'));
  }
- for(let step=0;step<5;step++){
-  const html=render('Home',{states:{9:step,10:profile,11:true}});
+ {
+  const {Onboarding}=load('components/nutrition/onboarding.tsx');
+  const html=renderToStaticMarkup(React.createElement(Onboarding,{busy:false,guest:true,onSave:async()=>true}));
   assert(!html.includes('aurora-environment'));
   assert(html.includes('bloom-wordmark'));
  }
@@ -252,7 +290,7 @@ test('Ask Bloom keeps the composer and branding without mounting the removed aur
 test('Ask Bloom history is a closed native disclosure with existing conversation controls',()=>{
  const data=fixture();
  data.state.conversations=[{id:'history-check',title:'Dinner ideas',messages:[]}];
- const html=render('AI Assistant',{states:{0:data}});
+ const html=render('AI Assistant',{states:{0:data.state}});
  assert(html.includes('<details class="bloom-history">'));
  assert(html.includes('aria-label="Toggle recent conversations"'));
  const drawer=html.match(/<details class="bloom-history">([\s\S]*?)<\/details>/)[1];
@@ -263,16 +301,23 @@ test('Ask Bloom history is a closed native disclosure with existing conversation
  assert(!render('Home').includes('bloom-history'));
 });
 
-test('only Ask Bloom renders an unchecked native header reveal control',()=>{
- const html=render('AI Assistant');
- const control=html.match(/<input[^>]*id="ask-header-reveal"[^>]*>/)[0];
- assert(!control.includes('checked'));
- assert(control.includes('type="checkbox"')&&control.includes('aria-label="Show header controls"'));
- assert(control.includes('aria-controls="app-header"'));
- assert(html.includes('<header class="topbar" id="app-header">'));
- for(const page of ['Home','Meals','Food','Planner','Progress','Wellness'])assert(!render(page).includes('ask-header-rail'));
+test('header keeps the sidebar toggle beside the page title and a clear date control on every page',()=>{
+ for(const page of ['Home','Meals','Food','Planner','AI Assistant','Progress','Wellness','Profile']){
+  const html=render(page);
+  assert(html.includes('<header class="topbar" id="app-header">'));
+  assert(html.indexOf('data-slot="sidebar-trigger"')<html.indexOf('class="crumbs"'),page+': toggle sits beside the title');
+  assert(html.includes('class="date-button"')&&html.includes('aria-label="Selected date"'));
+  assert(!html.includes('ask-header'),page+': no header-reveal hack');
+ }
  const app=fs.readFileSync(path.join(root,'app/nutrition-app.tsx'),'utf8');
  assert(!app.includes('onMouseEnter')&&!app.includes('onMouseLeave'));
+});
+test('profile page shows editable details with an explicit edit control and option labels',()=>{
+ const html=render('Profile');
+ assert(html.includes('Edit profile'));
+ assert(html.includes('Vegetarian: no meat, fish or eggs'));
+ assert(html.includes('Lose weight gently')||html.includes('General wellness')||html.includes('Eat healthier overall'));
+ assert(html.includes('Allergies')&&html.includes('Intolerances'));
 });
 
 test('light sidebar selected fill is isolated from dark themes, hover and inactive items',()=>{

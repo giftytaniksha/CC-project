@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -13,6 +13,14 @@ process.env.WRANGLER_REGISTRY_PATH ||= path.join(runtimeRoot, "wrangler/dev-regi
 process.env.MINIFLARE_REGISTRY_PATH ||= path.join(runtimeRoot, "wrangler/registry");
 
 process.chdir(projectRoot);
+
+// Wrangler loads `.dev.vars` beside the config file (`dist/server/wrangler.json`), not the repo root.
+const rootDevVars = path.join(projectRoot, ".dev.vars");
+const serverDir = path.join(projectRoot, "dist", "server");
+if (existsSync(rootDevVars) && existsSync(serverDir)) {
+  copyFileSync(rootDevVars, path.join(serverDir, ".dev.vars"));
+}
+
 for (const directory of [
   path.dirname(process.env.WRANGLER_LOG_PATH),
   process.env.WRANGLER_REGISTRY_PATH,

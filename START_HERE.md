@@ -64,6 +64,6 @@ GitHub stores the code. GitHub Pages alone cannot run this project's Cloudflare 
 
 .openai/hosting.json is retained because the build imports it. Its project_id identifies the existing Site; it is not a credential. Do not reuse that Site identity when creating an unrelated hosted deployment. No production secrets, authentication cookies, database contents or source-repository credentials are exported.
 
-Ask Bloom's backend is present but requires your own server-only OPENAI_API_KEY configuration for live responses. Missing AI configuration does not activate AI. See docs/ai-setup.md; never put a key in frontend code or commit it to GitHub.
+Ask Bloom's backend is present but uses Google Gemini (free tier) and requires your own server-only GEMINI_API_KEY for live responses. Missing AI configuration does not activate AI. See docs/ai-setup.md; never put a key in frontend code or commit it to GitHub.
 
 Keep .env*, .dev.vars*, node_modules/, dist/, .next/, .wrangler/, .sites-runtime/, private keys and local data out of Git. Dependencies and build output are regenerated locally.
