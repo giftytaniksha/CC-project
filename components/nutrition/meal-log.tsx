@@ -1,18 +1,19 @@
 'use client';
 import {Plus, Trash2} from 'lucide-react';
-import {loggedFood} from '@/lib/nutrition';
-import {DAILY_MEALS} from '@/lib/options';
+import {loggedFood, mealTypesFor} from '@/lib/nutrition';
 
 const round = (n: number) => Math.round(n * 10) / 10;
 
 /** The visitor's logged meals for one date, grouped by meal. Shared by Home and the Meals page so logging looks and works the same in both places. */
-export function MealLog({logs, onAdd, onEdit, onRemove}: {
+export function MealLog({logs, meals, onAdd, onEdit, onRemove}: {
   logs: any[];
+  meals?: string[];
   onAdd: (meal: string) => void;
   onEdit: (entry: any, food: any) => void;
   onRemove: (id: string, target: HTMLElement) => void;
 }) {
-  return <>{DAILY_MEALS.map((m, i) => {
+  const slots = meals?.length ? meals : mealTypesFor({frequency: 4});
+  return <>{slots.map((m, i) => {
     const entries = logs.filter(l => l.meal === m);
     const totals = entries.reduce((a, l) => {const f = loggedFood(l); if (!f) return a; return {calories: a.calories + f.calories * l.quantity, protein: a.protein + f.protein * l.quantity};}, {calories: 0, protein: 0});
     return <section className="meal-group" key={m}>

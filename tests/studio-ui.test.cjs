@@ -41,8 +41,8 @@ function fixture(guest=true){
 }
 function render(page,extra={}){
   const data=fixture(extra.guest??true);
-  // Hook order in nutrition-app: 0 state, 1 aiAvailable, 2 storageError, 4 page, 5 date, 16 cycle draft.
-  overrides={0:data.state,4:page,5:date,16:data.state.cycle,...extra.states};stateIndex=0;
+  // Hook order in nutrition-app: 0 state, 1 aiAvailable, 2 storageError, 4 page, 5 date, 18 cycle draft.
+  overrides={0:data.state,4:page,5:date,18:data.state.cycle,...extra.states};stateIndex=0;
   return renderToStaticMarkup(React.createElement(StudioTheme,null,React.createElement(App)));
 }
 
@@ -128,7 +128,7 @@ test('dropdowns are Radix popper selects with placeholders, not inline lists',()
 test('empty pages, initial loading, reconnect and cycle-off states render without fabricated data',()=>{
   const data=fixture();data.state={...nutrition.initial(),profile};data.totals=nutrition.emptyTotals();data.weekly=nutrition.stats(data.state,date);data.cycleEstimate=null;
   for(const page of ['Home','Meals','Planner','Progress','Wellness']){
-    const html=render(page,{states:{0:data.state,16:data.state.cycle}});
+    const html=render(page,{states:{0:data.state,18:data.state.cycle}});
     assert(!html.includes('NaN'));
     if(page==='Progress')assert(html.includes('Log your first meal'));
     if(page==='Wellness')assert(html.includes('Tracking is off'));
@@ -287,30 +287,63 @@ test('Ask Bloom keeps the composer and branding without mounting the removed aur
  assert.equal((layout.match(/<BloomIntro\/>/g)||[]).length,1);
 });
 
-test('Ask Bloom history is a closed native disclosure with existing conversation controls',()=>{
+test('Ask Bloom history is a vertical list beside the chat',()=>{
  const data=fixture();
- data.state.conversations=[{id:'history-check',title:'Dinner ideas',messages:[]}];
+ data.state.conversations=[{id:'history-check',title:'Dinner ideas',messages:[{role:'user',text:'Dinner ideas'}]}];
  const html=render('AI Assistant',{states:{0:data.state}});
- assert(html.includes('<details class="bloom-history">'));
- assert(html.includes('aria-label="Toggle recent conversations"'));
- const drawer=html.match(/<details class="bloom-history">([\s\S]*?)<\/details>/)[1];
- assert(drawer.includes('New conversation')&&drawer.includes('Dinner ideas'));
- assert(drawer.includes('id="bloom-recent-conversations"'));
+ assert(html.includes('class="chat-history"'));
+ assert(html.includes('New conversation')&&html.includes('Dinner ideas'));
+ assert(html.includes('id="bloom-recent-conversations"'));
+ assert(!html.includes('bloom-convo-nav')&&!html.includes('bloom-history'));
  assert(!html.includes('context-note')&&!html.includes('Your context, thoughtfully used.'));
  assert(html.includes('class="bloom-composer"')&&html.includes('Message Ask Bloom'));
- assert(!render('Home').includes('bloom-history'));
+ assert(!render('Home').includes('id="bloom-recent-conversations"'));
 });
 
-test('header keeps the sidebar toggle beside the page title and a clear date control on every page',()=>{
+test('Ask Bloom top dock overlays and only reveals from a top hot zone',()=>{
+ const css=fs.readFileSync(path.join(root,'app/globals.css'),'utf8');
+ const html=render('AI Assistant');
+ assert(html.includes('class="ask-dock-hotzone"'));
+ assert(!render('Home').includes('ask-dock-hotzone'));
+ assert(css.includes('position:absolute')&&css.includes('.ask-dock-hotzone'));
+ assert(css.includes('translateY(-22px)'));
+ assert(!css.includes('[data-page="AI Assistant"]:hover>.topbar'));
+});
+
+test('header keeps a date control; the sidebar toggle sits on the side nav edge',()=>{
  for(const page of ['Home','Meals','Food','Planner','AI Assistant','Progress','Wellness','Profile']){
   const html=render(page);
   assert(html.includes('<header class="topbar" id="app-header">'));
-  assert(html.indexOf('data-slot="sidebar-trigger"')<html.indexOf('class="crumbs"'),page+': toggle sits beside the title');
+  assert(html.includes('class="sidebar-edge-toggle"'),page+': edge toggle present');
+  const header=html.match(/<header class="topbar"[^>]*>[\s\S]*?<\/header>/)[0];
+  assert(!header.includes('data-slot="sidebar-trigger"'),page+': toggle is not in the top bar');
   assert(html.includes('class="date-button"')&&html.includes('aria-label="Selected date"'));
-  assert(!html.includes('ask-header'),page+': no header-reveal hack');
  }
  const app=fs.readFileSync(path.join(root,'app/nutrition-app.tsx'),'utf8');
  assert(!app.includes('onMouseEnter')&&!app.includes('onMouseLeave'));
+});
+
+test('three meals per day hides the snack slot on Home and Meals',()=>{
+ const three={...profile,frequency:3};
+ const data=fixture();
+ data.state.profile=three;
+ const home=render('Home',{states:{0:data.state}});
+ const meals=render('Meals',{states:{0:data.state}});
+ for(const html of [home,meals]){
+  assert(html.includes('aria-label="Add food to Breakfast"'));
+  assert(html.includes('aria-label="Add food to Lunch"'));
+  assert(html.includes('aria-label="Add food to Dinner"'));
+  assert(!html.includes('aria-label="Add food to Snack"'));
+ }
+});
+
+test('weekly review stays on Progress instead of opening Ask Bloom',()=>{
+ const html=render('Progress');
+ assert(html.includes('Get weekly AI review'));
+ assert(!html.includes('setPage(\'AI Assistant\')'));
+ const app=fs.readFileSync(path.join(root,'app/nutrition-app.tsx'),'utf8');
+ assert(app.includes('setWeeklyReview'));
+ assert(!app.includes("setPage('AI Assistant')"));
 });
 test('profile page shows editable details with an explicit edit control and option labels',()=>{
  const html=render('Profile');

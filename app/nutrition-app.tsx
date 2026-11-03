@@ -1,17 +1,17 @@
 'use client';
 import {useState, useEffect, useRef, useMemo, type ReactNode} from 'react';
-import {Home, Utensils, Search, CalendarDays, Sparkles, ChartNoAxesCombined, Heart, Settings, Plus, Trash2, RefreshCw, LogOut, X, ArrowUpRight, ShoppingBasket, ShieldCheck, ChevronLeft, UserRound} from 'lucide-react';
-import {SidebarProvider, Sidebar, SidebarContent, SidebarHeader, SidebarFooter, SidebarMenu, SidebarMenuItem, SidebarTrigger, SidebarInset} from '@/components/ui/sidebar';
+import {Home, Utensils, Search, CalendarDays, Sparkles, ChartNoAxesCombined, Heart, Settings, Plus, Trash2, RefreshCw, LogOut, X, ArrowUpRight, ShoppingBasket, ShieldCheck, UserRound} from 'lucide-react';
+import {SidebarProvider, Sidebar, SidebarContent, SidebarHeader, SidebarFooter, SidebarMenu, SidebarMenuItem, SidebarInset} from '@/components/ui/sidebar';
 import {Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription} from '@/components/ui/dialog';
 import {Checkbox} from '@/components/ui/checkbox';
 import {Switch} from '@/components/ui/switch';
 import {AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction} from '@/components/ui/alert-dialog';
 import {toast} from 'sonner';
 import {ThemeToggle, StudioToaster} from '@/components/nutrition/studio-theme';
-import {EnergyTrend, FoodMark, StudioNavButton, AssistantText} from '@/components/nutrition/studio-visuals';
-import {foods, keys, sum, searchFoods, groupLabel, GROCERY_GROUPS, initial} from '@/lib/nutrition';
+import {EnergyTrend, FoodMark, StudioNavButton, AssistantText, SidebarEdgeToggle} from '@/components/nutrition/studio-visuals';
+import {foods, keys, sum, searchFoods, groupLabel, GROCERY_GROUPS, initial, mealTypesFor} from '@/lib/nutrition';
 import {view} from '@/lib/view';
-import {DAILY_MEALS, type Option} from '@/lib/options';
+import {type Option} from '@/lib/options';
 import {Onboarding} from '@/components/nutrition/onboarding';
 import {ProfilePage} from '@/components/nutrition/profile-fields';
 import {HomePage} from '@/components/nutrition/home-page';
@@ -23,7 +23,6 @@ import {CardMotion} from '@/components/nutrition/card-motion';
 const STORAGE_KEY = 'daily-bloom-state';
 const nav = [['Home', Home], ['Meals', Utensils], ['Food', Search], ['Planner', CalendarDays], ['AI Assistant', Sparkles], ['Progress', ChartNoAxesCombined], ['Wellness', Heart]] as const;
 const PAGE_TITLES: Record<string, string> = {Home: 'Today', 'AI Assistant': 'Ask Bloom', Profile: 'Profile & settings'};
-const MEAL_OPTIONS: readonly Option[] = DAILY_MEALS.map(meal => [meal, meal] as const);
 const RANGE_OPTIONS: readonly Option[] = [['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days']];
 const today = () => {const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;};
 const round = (n: number) => Math.round(n * 10) / 10;
@@ -55,6 +54,8 @@ export default function NutritionApp() {
   const [chatId, setChatId] = useState('');
   const [message, setMessage] = useState('');
   const [chatError, setChatError] = useState('');
+  const [weeklyReview, setWeeklyReview] = useState('');
+  const [reviewError, setReviewError] = useState('');
   const [range, setRange] = useState(7);
   const [newWeight, setNewWeight] = useState('');
   const [c, setC] = useState<any>({enabled: false, start: today(), length: 28, duration: 5});
@@ -100,7 +101,8 @@ export default function NutritionApp() {
       if (action === 'conversation') setChatId(x.state.conversations[0].id);
       return x;
     } catch (e: any) {
-      if (action === 'chat' || action === 'review') setChatError(e.message);
+      if (action === 'chat') setChatError(e.message);
+      else if (action === 'review') setReviewError(e.message);
       else toast.error(e.message);
       return null;
     } finally {setBusy(false);}
@@ -156,6 +158,8 @@ export default function NutritionApp() {
   if (!s.profile) return <><Onboarding busy={busy} onSave={saveProfile}/></>;
 
   const conversation = s.conversations.find((v: any) => v.id === chatId) || s.conversations[0];
+  const mealSlots = mealTypesFor(s.profile);
+  const mealOptions: readonly Option[] = mealSlots.map(meal => [meal, meal] as const);
   const filtered = searchFoods(search);
   const recentDates = Array.from({length: range}, (_, i) => new Date(Date.parse(date) - (range - 1 - i) * 86400000).toISOString().slice(0, 10));
   const history = recentDates.map(d => ({date: d, ...sum(s.logs.filter((l: any) => l.date === d)), water: s.water[d] || 0, logged: s.logs.some((l: any) => l.date === d)}));
@@ -175,7 +179,7 @@ export default function NutritionApp() {
   const openProfile = () => setPage('Profile');
 
   const dayLogs = s.logs.filter((l: any) => l.date === date);
-  const addMeal = (m: string) => {setMealType(m); setPage('Food');};
+  const addMeal = (m: string) => {setMealType(mealSlots.includes(m) ? m : mealSlots[0]); setPage('Food');};
   const editEntry = (entry: any, food: any) => {openFood({...food, editId: entry.id}); setQuantity(entry.quantity);};
   const removeEntry = (id: string, target: HTMLElement) => {deleteReturnFocus.current = target; deleteFallbackFocus.current = target.closest('.meal-group')?.querySelector<HTMLButtonElement>('.section-head button') ?? null; setDeleteId(id);};
 
@@ -211,11 +215,12 @@ export default function NutritionApp() {
         <div className="account"><div>{s.profile.name[0]?.toUpperCase()}</div><span><strong>{s.profile.name}</strong><small>{s.profile.diet}</small></span></div>
       </SidebarFooter>
     </Sidebar>
+    <SidebarEdgeToggle/>
 
-    <SidebarInset className="nutrition-main">
+    <SidebarInset className="nutrition-main" data-page={page}>
+      {page === 'AI Assistant' && <div className="ask-dock-hotzone" aria-hidden="true"/>}
       <header className="topbar" id="app-header">
         <div className="header-location">
-          <SidebarTrigger aria-label="Show or hide the menu"/>
           <div className="crumbs"><span>The Daily Bloom</span><span className="breadcrumb-divider" aria-hidden="true">/</span><strong>{pageTitle}</strong></div>
         </div>
         <div className="header-utilities">
@@ -246,7 +251,7 @@ export default function NutritionApp() {
 
           {page === 'Meals' && <>
             <div className="summary-strip"><span><strong>{Math.round(n.calories)}</strong> kcal</span><span><strong>{n.protein} g</strong> protein</span><span><strong>{n.fiber} g</strong> fiber</span><button onClick={() => setPage('Food')}><Plus size={18}/>Add food</button></div>
-            <div className="meal-page panel"><MealLog logs={dayLogs} onAdd={addMeal} onEdit={editEntry} onRemove={removeEntry}/></div>
+            <div className="meal-page panel"><MealLog logs={dayLogs} meals={mealSlots} onAdd={addMeal} onEdit={editEntry} onRemove={removeEntry}/></div>
           </>}
 
           {page === 'Food' && <>
@@ -315,16 +320,17 @@ export default function NutritionApp() {
             </section>
           </>}
 
-          {page === 'AI Assistant' && <div className="assistant-grid"><section className="chat-panel panel">
+          {page === 'AI Assistant' && <div className="assistant-grid">
+            <aside className="chat-history" id="bloom-recent-conversations" aria-label="Ask Bloom conversations">
+              <button type="button" disabled={busy} className="secondary" onClick={() => act('conversation')}><Plus size={16}/>New conversation</button>
+              {s.conversations.filter((v: any) => v.id === conversation?.id || v.messages?.length).map((v: any) => {
+                const first = v.messages?.find((m: any) => m.role === 'user')?.text?.trim();
+                const label = (v.title && v.title !== 'New conversation') ? v.title : (first ? first.slice(0, 45) : 'New conversation');
+                return <button type="button" className={'history-item ' + (conversation?.id === v.id ? 'active' : '')} key={v.id} onClick={() => {setChatId(v.id); setChatError('');}}>{label}</button>;
+              })}
+            </aside>
+            <section className="chat-panel panel">
             <div className="section-head">
-              <details className="bloom-history">
-                <summary aria-controls="bloom-recent-conversations" aria-label="Toggle recent conversations" title="Recent conversations"><ChevronLeft size={18} aria-hidden="true"/></summary>
-                <aside className="chat-history panel" id="bloom-recent-conversations" aria-label="Recent conversations">
-                  <button disabled={busy} className="secondary" onClick={() => act('conversation')}><Plus size={17}/>New conversation</button>
-                  <h3>Recent conversations</h3>
-                  {s.conversations.map((v: any) => <button className={'history-item ' + (conversation?.id === v.id ? 'active' : '')} key={v.id} onClick={() => {setChatId(v.id); setChatError('');}}>{v.title}</button>)}
-                </aside>
-              </details>
               <h2><Sparkles size={20}/>Your conversation</h2>
               <span className="pill assistant-status" data-ready={Boolean(data.aiAvailable)}>{data.aiAvailable ? 'Ready' : 'Setup needed'}</span>
             </div>
@@ -350,7 +356,7 @@ export default function NutritionApp() {
             <section className="panel trend"><div className="section-head"><div><p className="eyebrow">THE BIGGER PICTURE</p><h2>Daily energy.</h2></div><span className="pill">kcal · logged days</span></div>{!logged.length ? <div className="empty"><ChartNoAxesCombined/><p>Log your first meal to start your story.</p></div> : <EnergyTrend key={range + date} history={history} target={t.calories}/>}<p className="footnote">Averages use logged days only; incomplete logs undercount intake. No missing days are estimated.</p></section>
             <div className="progress-bottom">
               <section className="panel"><h2>Your weight check-ins</h2><form className="inline-actions" onSubmit={async e => {e.preventDefault(); if (await act('weight', {weight: newWeight})) setNewWeight('');}}><input aria-label="Weight in kg" placeholder="Your weight today, in kg" type="number" min="35" max="250" step="0.1" required value={newWeight} onChange={e => setNewWeight(e.target.value)}/><button disabled={busy}>Save</button></form>{[...s.weights.filter((w: any) => recentDates.includes(w.date))].sort((a: any, b: any) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)).map((w: any) => <div className="weight-row" key={w.id}><span>{w.date}</span><strong>{w.weight} kg</strong></div>)}</section>
-              <section className="weekly-card"><Sparkles/><h2>A thoughtful weekly review.</h2><p>{data.weekly.loggedDays} of the last 7 days have meals logged. {data.weekly.loggedDays < 3 ? 'Log at least 3 days to get a meaningful review.' : 'Your actual weekly averages will guide the review.'}</p><button disabled={busy || data.weekly.loggedDays < 3} onClick={async () => {setChatError(''); const x = await act('review', {conversationId: conversation?.id}); setPage('AI Assistant'); if (x) setChatId(x.activeConversationId);}}>Get weekly AI review</button></section>
+              <section className="weekly-card"><Sparkles/><h2>A thoughtful weekly review.</h2><p>{data.weekly.loggedDays} of the last 7 days have meals logged. {data.weekly.loggedDays < 3 ? 'Log at least 3 days to get a meaningful review.' : 'Your actual weekly averages will guide the review.'}</p><button disabled={busy || data.weekly.loggedDays < 3} onClick={async () => {setReviewError(''); const x = await act('review', {conversationId: conversation?.id}); if (!x) return; const conv = x.state.conversations.find((c: any) => c.id === x.activeConversationId) || x.state.conversations[0]; const last = conv?.messages?.filter((m: any) => m.role === 'assistant').at(-1)?.text || ''; setWeeklyReview(last); if (x.activeConversationId) setChatId(x.activeConversationId);}}>{busy ? 'Writing…' : 'Get weekly AI review'}</button>{reviewError && <p className="error" role="alert">{bloomCopy(reviewError)}</p>}{weeklyReview && <div className="weekly-review-result"><AssistantText text={bloomCopy(weeklyReview)}/></div>}</section>
             </div>
           </>}
 
@@ -404,7 +410,7 @@ export default function NutritionApp() {
             <p className="footnote">All values are per serving. Enter 0 only when the amount is zero. These values are saved as user-entered nutrition.</p>
           </> : <div className="detail-nutrients">{keys.map(k => <div key={k}><strong>{quantity >= .25 && quantity <= 20 ? round(selected[k] * quantity) : '—'}</strong><span>{k === 'calories' ? 'kcal' : k + ' (g)'}</span></div>)}</div>}
           <TextField label="Servings" hint="Between 0.25 and 20 servings." error={!Number.isNaN(quantity) && (quantity < .25 || quantity > 20) ? 'Enter between 0.25 and 20 servings.' : undefined} type="number" required min="0.25" max="20" step="any" placeholder="How many servings you ate" value={Number.isNaN(quantity) ? '' : quantity} onChange={(e: any) => setQuantity(e.target.value === '' ? NaN : Number(e.target.value))}/>
-          {!selected.editId && <SelectField label="Add to meal" hint="Which meal this belongs to." placeholder="Choose a meal" value={mealType} options={MEAL_OPTIONS} onChange={setMealType}/>}
+          {!selected.editId && <SelectField label="Add to meal" hint="Which meal this belongs to." placeholder="Choose a meal" value={mealSlots.includes(mealType) ? mealType : mealSlots[0]} options={mealOptions} onChange={setMealType}/>}
           {!selected.customEntry && <p className="footnote">{selected.source}. Prepared foods may have different ingredients; verify allergens before eating.</p>}
           <button disabled={busy || !Number.isFinite(quantity) || quantity < .25 || quantity > 20}>{busy ? 'Saving…' : selected.editId ? 'Save servings' : 'Add to meal'}</button>
         </form>}
@@ -423,7 +429,7 @@ export default function NutritionApp() {
       <AlertDialogContent className="nourish-dialog session-dialog" onCloseAutoFocus={event => {event.preventDefault(); sessionReturnFocus.current?.focus();}}>
         <button type="button" className="dialog-dismiss" aria-label="Close end session dialog" onClick={() => setEndGuest(false)}><X size={18}/></button>
         <AlertDialogHeader><AlertDialogTitle>End your session?</AlertDialogTitle><AlertDialogDescription>This deletes your profile, meals, plans and history from this browser. Nothing is kept on our servers, so this cannot be undone.</AlertDialogDescription></AlertDialogHeader>
-        <AlertDialogFooter><AlertDialogCancel className="secondary">Keep my session</AlertDialogCancel><AlertDialogAction onClick={event => {event.preventDefault(); window.localStorage.removeItem(STORAGE_KEY); canSave.current = true; setStorageError(''); setState(initial()); setChatId(''); setMessage(''); setPage('Home'); setEndGuest(false);}}>End &amp; delete my data</AlertDialogAction></AlertDialogFooter>
+        <AlertDialogFooter><AlertDialogCancel className="secondary">Keep my session</AlertDialogCancel><AlertDialogAction onClick={event => {event.preventDefault(); window.localStorage.removeItem(STORAGE_KEY); canSave.current = true; setStorageError(''); setState(initial()); setChatId(''); setMessage(''); setWeeklyReview(''); setReviewError(''); setPage('Home'); setEndGuest(false);}}>End &amp; delete my data</AlertDialogAction></AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
     <StudioToaster/>

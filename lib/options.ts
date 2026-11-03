@@ -71,8 +71,8 @@ export const BUDGET_OPTIONS: readonly Option[] = [
   ['Flexible', 'No specific limit'],
 ];
 
-export const MEAL_TYPES = ['Breakfast', 'Lunch', 'Snack', 'Dinner'] as const;
-export const DAILY_MEALS = ['Breakfast', 'Lunch', 'Snack', 'Dinner'] as const;
+export const MEAL_TYPES = ['Breakfast', 'Morning snack', 'Lunch', 'Snack', 'Evening snack', 'Dinner'] as const;
+export const DAILY_MEALS = ['Breakfast', 'Morning snack', 'Lunch', 'Snack', 'Evening snack', 'Dinner'] as const;
 
 export const optionValues = (options: readonly Option[]) => options.map(([value]) => value) as [string, ...string[]];
 export const optionLabel = (options: readonly Option[], value: unknown) =>

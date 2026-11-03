@@ -136,7 +136,12 @@ export function allowed(f:Food,p:any){
 }
 
 export const QUICK_COOKING=['No cooking','Quick meals'];
-export const mealTypesFor=(p:any):string[]=>Number(p?.frequency)===3?['Breakfast','Lunch','Dinner']:['Breakfast','Lunch','Snack','Dinner'];
+export const mealTypesFor=(p:any):string[]=>{
+  const n=Number(p?.frequency);
+  if(n===3)return ['Breakfast','Lunch','Dinner'];
+  if(n===5)return ['Breakfast','Morning snack','Lunch','Evening snack','Dinner'];
+  return ['Breakfast','Lunch','Snack','Dinner'];
+};
 
 export function meal(p:any,type:string,seed:number,t:any){
   let pool=foods.filter(f=>allowed(f,p)&&f.id!=='oil');
@@ -152,9 +157,14 @@ export function meal(p:any,type:string,seed:number,t:any){
   const grain=pick(preferred(pool.filter(f=>f.group==='Grains')));
   const protein=pick(preferred(pool.filter(f=>f.protein>=6&&f.id!=='oats')),1);
   const produce=pick(pool.filter(f=>f.group==='Produce'),2);
-  const chosen=(type==='Snack'?[produce,protein]:[grain,protein,produce]).filter(Boolean) as Food[];
+  const snackish=/snack/i.test(type);
+  const chosen=(snackish?[produce,protein]:[grain,protein,produce]).filter(Boolean) as Food[];
   if(!chosen.length)throw Error('No meals match these restrictions. Update your preferences.');
-  const share:Record<string,number>=Number(p.frequency)===3?{Breakfast:.25,Lunch:.35,Dinner:.4}:{Breakfast:.25,Snack:.15,Lunch:.3,Dinner:.3};
+  const share:Record<string,number>=Number(p.frequency)===3
+    ?{Breakfast:.25,Lunch:.35,Dinner:.4}
+    :Number(p.frequency)===5
+      ?{Breakfast:.2,'Morning snack':.12,Lunch:.28,'Evening snack':.12,Dinner:.28}
+      :{Breakfast:.25,Snack:.15,Lunch:.3,Dinner:.3};
   const fraction=share[type]??.3;
   const base=chosen.reduce((a,f)=>a+f.calories,0);
   const scale=Math.min(3,Math.max(.5,t.calories*fraction/base));

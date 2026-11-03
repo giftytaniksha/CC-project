@@ -175,6 +175,7 @@ test('paneer, milk and curd are flagged as lactose so lactose intolerance exclud
 test('meal slots follow the chosen meals per day', () => {
   assert.deepEqual(nutrition.mealTypesFor({frequency: 3}), ['Breakfast', 'Lunch', 'Dinner']);
   assert.deepEqual(nutrition.mealTypesFor({frequency: 4}), ['Breakfast', 'Lunch', 'Snack', 'Dinner']);
+  assert.deepEqual(nutrition.mealTypesFor({frequency: 5}), ['Breakfast', 'Morning snack', 'Lunch', 'Evening snack', 'Dinner']);
 });
 test('suggestions are deterministic per day, respect the diet and the budget', () => {
   const profile = {name: 'x', age: 30, sex: 'female', height: 165, weight: 60, activity: 'light', goal: 'General wellness', diet: 'Vegan', allergies: '', intolerances: '', dislikes: '', preferred: '', cuisine: 'Indian', frequency: 4, cooking: 'No cooking', budget: 'Budget'};

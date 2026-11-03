@@ -6,6 +6,7 @@ import {Progress} from '@/components/ui/progress';
 import {EnergyRing, AssistantText} from './studio-visuals';
 import {bloomCopy} from './bloom-brand';
 import {DIET_OPTIONS, GOAL_OPTIONS, CUISINE_OPTIONS, COOKING_OPTIONS, BUDGET_OPTIONS, optionLabel} from '@/lib/options';
+import {mealTypesFor} from '@/lib/nutrition';
 import {MealLog} from './meal-log';
 
 const round = (n: number) => Math.round(n * 10) / 10;
@@ -86,7 +87,7 @@ export function HomePage({data, date, busy, onRecommend, onWater, onNavigate, on
 
     <section className="panel meal-page today-plate">
       <div className="section-head"><div><p className="eyebrow">FROM MORNING TO EVENING</p><h2>Your plate today.</h2></div><button type="button" className="text-button" onClick={() => onNavigate('Meals')}>View meals<ArrowUpRight size={15}/></button></div>
-      <MealLog logs={dayLogs} onAdd={onAddMeal} onEdit={onEditEntry} onRemove={onRemoveEntry}/>
+      <MealLog logs={dayLogs} meals={mealTypesFor(profile)} onAdd={onAddMeal} onEdit={onEditEntry} onRemove={onRemoveEntry}/>
     </section>
 
     <section className="panel recommend-panel">

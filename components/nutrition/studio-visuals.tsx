@@ -4,6 +4,14 @@ import {useId, useState, type CSSProperties, type ReactNode} from 'react';
 import {Apple, Bean, Milk, Wheat, CookingPot, Sprout, ArrowUpRight, ChevronLeft, ChevronRight} from 'lucide-react';
 import {SidebarMenuButton, useSidebar} from '@/components/ui/sidebar';
 
+export function SidebarEdgeToggle() {
+  const {toggleSidebar, state, isMobile, openMobile} = useSidebar();
+  const expanded = isMobile ? openMobile : state === 'expanded';
+  return <button type="button" className="sidebar-edge-toggle" data-expanded={expanded} onClick={toggleSidebar} aria-label={expanded ? 'Hide the menu' : 'Show the menu'} title={expanded ? 'Hide menu' : 'Show menu'}>
+    {expanded ? <ChevronLeft size={16} aria-hidden="true"/> : <ChevronRight size={16} aria-hidden="true"/>}
+  </button>;
+}
+
 export function StudioNavButton({active, onSelect, children}: {active?: boolean; onSelect: () => void; children: ReactNode}) {
   const {isMobile, setOpenMobile} = useSidebar();
   return <SidebarMenuButton isActive={active} aria-current={active ? 'page' : undefined} onClick={() => {onSelect(); if (isMobile) setOpenMobile(false);}}>{children}</SidebarMenuButton>;
